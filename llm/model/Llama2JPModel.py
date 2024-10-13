@@ -4,6 +4,7 @@ from transformers import (
     AutoTokenizer,
 )
 from transformers import pipeline
+from typing import List
 
 class Llama2JPModel:
     def __init__(self):
@@ -23,6 +24,6 @@ class Llama2JPModel:
         )
         print("model setup complete.")
 
-    def generate(self, prompt:str) -> str:
-        output = self.pipeline(prompt)
-        return output[0]["generated_text"]
+    def generate(self, prompts:List[str]) -> List[dict]:
+        output = self.pipeline(prompts, batch_size =len(prompts))
+        return output
