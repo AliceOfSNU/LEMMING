@@ -9,5 +9,5 @@ pandas
 numpy
 mecab-python3
 unidic-lite
-flask
+fastapi[standard]
 matplotlib
