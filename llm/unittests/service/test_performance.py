@@ -9,42 +9,44 @@ import Lemming
 import matplotlib
 import matplotlib.pyplot as plt
 import time
-import threading
 import queue
-
+import random
+import threading 
 TEST_OUTPUT_DIR = "unittests/outputs"
 def write_to_csv(title: str, data: List[List[str]]):
     with open(os.path.join(TEST_OUTPUT_DIR, title), "w") as f:
         writer = csv.writer(f)
         writer.writerows(data)
 
+keep_going = True
 #lemming = Lemming.LemmingService()
-
-
 def test_threaded_requests():
     TASK_QUEUE_MAX_SIZE = 4
-    job_queue = queue()
-    job_res_queue = queue()    
-    class HFThread():        
-        def run(self):
-            while True:
-                (data, qid) = job_queue.get()
-                time.sleep(1)
-                job_res_queue.put((data + " done", qid))
-                print(f"finished processing #{qid}, remaining queue {job_queue.qsize()}")
+    job_queue = queue.Queue()
+    job_res_queue = queue.Queue()    
     
-    qmap = {}
+    class HFThread(threading.Thread):        
+        def run(self):
+            global keep_going
+            while keep_going:
+                if job_queue.qsize() > 0:
+                    (data, qid) = job_queue.get()
+                    time.sleep(1)
+                    job_res_queue.put((data + " done", qid))
+                    print(f"finished processing #{qid}, remaining queue {job_queue.qsize()}")
+                time.sleep(random.random()*0.1)
 
+    qmap = {}
     async def query(id:str):
         start_time = time.time()
         print(f"task {id}")
-        if job_queue.qsize() > TASK_QUEUE_MAX_SIZE:
+        if job_queue.qsize() >= TASK_QUEUE_MAX_SIZE:
             print(f"canceling task#{id}")
             result = -1
         else:
             response_q = asyncio.Queue()
             # place task in job queue and subscribe for notification
-            print(f"putting in queue task#{id}")
+            print(f"putting in queue task#{id}, qsize: {job_queue.qsize()}")
             job_queue.put((f"minitask {id}", id))
             qmap[id] = response_q
 
@@ -55,29 +57,34 @@ def test_threaded_requests():
 
     async def poll_results_loop():
         while(True):
-            (result, qid) = job_res_queue.get() # fetch result
-            await qmap[qid].put(result) # notify corresponding coroutine
+            while job_res_queue.qsize() > 0:
+                (result, qid) = job_res_queue.get() # fetch result
+                await qmap[qid].put(result) # notify corresponding coroutine
             await asyncio.sleep(0.1)
-            
+
     async def main():
         # launch queries
         tasks = []
+        print("starting main")
         server = asyncio.create_task(poll_results_loop())
-
-        for i in range(16):
+        for i in range(30):
+            print("spawn task", i)
             tasks.append(asyncio.create_task(query(str(i))))
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(0.5)
         # wait for queries to complete. hold on. this takes time
         tasks_results = await asyncio.gather(*tasks)
         server.cancel()
-
         print(tasks_results)
 
     t1 = HFThread()
-    t1.run()
+    t1.start()
     loop = asyncio.get_event_loop()
     loop.run_until_complete(main())
     loop.close()
+    global keep_going
+    keep_going = False
+    t1.join()
+
 
 def test_multiple_requests():
     task_q = asyncio.Queue()
@@ -139,4 +146,5 @@ def test_multiple_requests():
     loop.close()
 
 #if __name__ == "__main__":
+#test_multiple_requests()
 test_threaded_requests()
