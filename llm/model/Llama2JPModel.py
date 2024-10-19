@@ -1,12 +1,19 @@
+from typing import List
+import threading
+import subprocess
+import aiohttp
+import time
+import os
+import atexit
+import queue
+import asyncio
+
 import torch
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     pipeline
 )
-from typing import List
-import threading
-import asyncio
 from vllm import LLM, SamplingParams
 
 class LLMModel():
@@ -50,38 +57,35 @@ class Llama3JPModel():
             self.tokenizer.apply_chat_template(prompt, tokenize = False, add_generation_prompt=True)
             for prompt in batch_prompts
         ]
-        #outputs = self.llm.generate(prompts, self.sampling_params)
+        outputs = self.llm.generate(prompts, self.sampling_params)
         outputs = [
-            "A\n1.one\n2.two\n3.three" for prompt in prompts
+            res.outputs[0].text for res in outputs
         ]
         return outputs
     
+    
 class ThreadedLLMWorker(threading.Thread):
     def __init__(self, job_queue, result_queue):
+        super().__init__()
         self.job_queue = job_queue
         self.result_queue = result_queue
         self.model = Llama3JPModel()
         self.shutdown = False
-        self.start()
 
     # this function is synchronous,
     # will not block the main thread
     def run(self):
+        print("llm thread has started")
         while not self.shutdown:
             if self.job_queue.qsize() > 0:
                 (uid, batch) = self.job_queue.get()
                 start_time = time.time()
+                print(f"[gen] started for <{uid}>")
                 outputs = self.model.generate(batch)
-                print(f"generating done in {time.time()-start_time} seconds")
+                print(f"[gen] in {time.time()-start_time} seconds")
                 self.result_queue.put((uid, outputs))
             time.sleep(0.1)
 
-import subprocess
-import aiohttp
-import time
-import os
-import atexit
-import queue
 
 class NetworkLLMWorker():
     def __init__(self, port:int = 8000, host:str = "localhost"):

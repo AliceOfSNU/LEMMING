@@ -27,7 +27,7 @@ class Llama3JPPrompter(Prompter):
     def prompt_generate_sentences(self, word:str) -> List[str]:
         # few shot learning(in context learning) with instruction + examples
         SYSTEM_WARMUP = "あなたは誠実で優秀な日本人のアシスタントです。特に指示が無い場合は、常に日本語で回答してください。"
-        INSTRUCTION = "『{}』を使って例文を3つ作ってください。"
+        INSTRUCTION = "『{word}』を使って例文を3つ作ってください。"
         EXAMPLE = \
             "1. 新しい環境に慣れるのには時間がかかります。\n"\
             "2. 毎日練習して、次第に英語を話すことに慣れてきました。\n"\

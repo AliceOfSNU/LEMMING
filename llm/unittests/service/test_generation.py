@@ -25,10 +25,10 @@ async def test_generate_sentences():
     # create some tasks
     tasks = []
     startup = time.time()
-    for i in range(30):
+    for i in range(50):
         print(f"req@ {time.time()-startup}, task#{i}")
         tasks.append(asyncio.create_task(lemming.generate_sentences("動く")))
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.3)
 
     # wait for all tasks to complete
     tasks_results = await asyncio.gather(*tasks)
@@ -39,6 +39,12 @@ async def test_generate_sentences():
 
     lemming.shutdown = True
     await lemming.loop
+
+    sum = 0.0
+    for t in lemming.durations:
+        sum += t
+    print(f"mean latency: {sum/len(lemming.durations)}")
+
 
 
 #if __name__ == "__main__":

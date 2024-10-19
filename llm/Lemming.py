@@ -8,7 +8,7 @@ import random
 import uuid
 import time
 
-MAX_QUEUE_SIZE = 5
+MAX_QUEUE_SIZE = 100
 class LemmingService:
     def __init__(self):
         self.prompter = Llama3JPPrompter()
@@ -18,23 +18,33 @@ class LemmingService:
         self.awaited_jobs : Dict[str, List[asyncio.queue]] = {}
         #self.model = NetworkLLMWorker()
         self.model = ThreadedLLMWorker(self.job_queue, self.result_queue)
+        self.model.start()
         self.loop: asyncio.Task = asyncio.create_task(self._poll_queue_loop())
         self.shutdown = False
+        self.last_tick = time.time()
+        
+
+        # debug
+        self.n = 0
+        self.durations = []
 
     async def _poll_queue_loop(self):
         # pull tasks out of queue and dispatch to llm.
+        BATCH_SIZE = 4
         while not self.shutdown:
-            if self.sync_queue.qsize() > 0:
+            if self.sync_queue.qsize() > BATCH_SIZE or (time.time() - self.last_tick) > 4.0:
                 # there is at least one item to process
                 batch, qs = [], []
-                while len(batch) < 4 and self.sync_queue.qsize() > 0:
+                while len(batch) < BATCH_SIZE and self.sync_queue.qsize() > 0:
                     (q, prompt) = self.sync_queue.get()
                     batch.append(prompt)
                     qs.append(q)
-                uid = uuid.uuid1().hex
-                print(f"queued batch <{uid}> with n={len(batch)}")
-                self.job_queue.put((uid, batch))
-                self.awaited_jobs[uid] = qs
+                if len(batch) > 0:
+                    uid = uuid.uuid1().hex
+                    print(f"queued batch <{uid}> with n={len(batch)}")
+                    self.job_queue.put((uid, batch))
+                    self.awaited_jobs[uid] = qs
+                self.last_tick = time.time()
             
             # poll result queues
             while self.result_queue.qsize() > 0:
@@ -48,12 +58,15 @@ class LemmingService:
             # wait for a little time before polling again.
             await asyncio.sleep(0.1)
 
+        self.model.shutdown = True
+        self.model.join()
+
     async def _create_generation_task(self, prompt: List[str]):
-        if self.queue.qsize() > MAX_QUEUE_SIZE:
+        if self.sync_queue.qsize() > MAX_QUEUE_SIZE:
             return None
         q = asyncio.Queue()
-        print(f"queue size {self.queue.qsize()}")
-        self.queue.put((q, prompt))
+        print(f"queue size {self.sync_queue.qsize()}")
+        self.sync_queue.put((q, prompt))
         return q
 
     def postprocess(self, text: str) -> List[str]:
@@ -63,6 +76,9 @@ class LemmingService:
     
     async def generate_sentences(self, word):
         prompt = self.prompter.prompt_generate_sentences(word)
+        if self.n == 0:
+            print(prompt)
+            self.n += 1
         q = await self._create_generation_task(prompt)
 
         # server is too busy. client should try later
@@ -71,10 +87,10 @@ class LemmingService:
             print(f"canceled word {word}")
             return output
         
-        print(f"put word {word} in queue")
         start = time.time()        
         output = await q.get()
         print(f"completed word {word} in {time.time()-start}seconds")
+        self.durations.append(time.time()-start)
 
         # postproccessing
         output = self.postprocess(output)
