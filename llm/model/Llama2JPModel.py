@@ -2,11 +2,22 @@ import torch
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
+    pipeline
 )
-from transformers import pipeline
 from typing import List
+import threading
+import asyncio
+from vllm import LLM, SamplingParams
 
-class Llama2JPModel:
+class LLMModel():
+    def __init__(self):
+        self.tokenizer = None
+        self.model = None
+    
+    def generate(self):
+        raise NotImplementedError
+
+class Llama2JPModel(LLMModel):
     def __init__(self):
         self.MODEL_NAME = "elyza/ELYZA-japanese-Llama-2-7b-instruct"
         print(f"initializing model and tokenizer {self.MODEL_NAME}")
@@ -27,3 +38,80 @@ class Llama2JPModel:
     def generate(self, prompts:List[str]) -> List[dict]:
         output = self.pipeline(prompts, batch_size =len(prompts))
         return output
+    
+class Llama3JPModel():
+    def __init__(self):
+        self.llm = LLM(model="elyza/Llama-3-ELYZA-JP-8B-AWQ", quantization="awq")
+        self.tokenizer = self.llm.get_tokenizer()
+        self.sampling_params = SamplingParams(temperature=0.6, top_p=0.9, max_tokens=600)
+    
+    def generate(self, batch_prompts: List[List[str]]):
+        prompts = [
+            self.tokenizer.apply_chat_template(prompt, tokenize = False, add_generation_prompt=True)
+            for prompt in batch_prompts
+        ]
+        #outputs = self.llm.generate(prompts, self.sampling_params)
+        outputs = [
+            "A\n1.one\n2.two\n3.three" for prompt in prompts
+        ]
+        return outputs
+    
+class ThreadedLLMWorker(threading.Thread):
+    def __init__(self, job_queue, result_queue):
+        self.job_queue = job_queue
+        self.result_queue = result_queue
+        self.model = Llama3JPModel()
+        self.shutdown = False
+        self.start()
+
+    # this function is synchronous,
+    # will not block the main thread
+    def run(self):
+        while not self.shutdown:
+            if self.job_queue.qsize() > 0:
+                (uid, batch) = self.job_queue.get()
+                start_time = time.time()
+                outputs = self.model.generate(batch)
+                print(f"generating done in {time.time()-start_time} seconds")
+                self.result_queue.put((uid, outputs))
+            time.sleep(0.1)
+
+import subprocess
+import aiohttp
+import time
+import os
+import atexit
+import queue
+
+class NetworkLLMWorker():
+    def __init__(self, port:int = 8000, host:str = "localhost"):
+        self.model_str = "elyza/Llama-3-ELYZA-JP-8B-AWQ"
+        self.completion_ep = f"http://{host}:{str(port)}/v1/chat/completions"
+        callargs = [
+            "python",
+            "-m", "vllm.entrypoints.openai.api_server",
+            "--model", self.model_str,
+            "--port", str(port),
+            "--host", host,
+            "--quantization", "awq",
+        ]
+        print("initializing server")
+        #self.srv_process = subprocess.Popen(callargs, shell=True)
+        #print("started server. pid: ", self.srv_process.pid)
+        #atexit.register(self.srv_process.terminate)
+
+    async def generate(self, prompts:List[str], **generation_args):
+        payload = {
+            "model": self.model_str,
+            "messages": prompts,
+            **generation_args,
+        }
+        start_time = time.time()
+        await asyncio.sleep(1.0)
+        result = "A\n1.one\n2.two\n3.three"
+        #async with aiohttp.ClientSession() as session:
+        #    async with session.post(self.completion_ep, json=payload) as response:
+        #        res = await response.json()
+        #        latency = time.time()-start_time
+        #        result = {"time" : latency, "response": res}
+        return result

@@ -5,7 +5,7 @@ from typing import List, Dict
 import os
 import csv
 import asyncio
-import Lemming
+#import Lemming
 import matplotlib
 import matplotlib.pyplot as plt
 import time
@@ -26,30 +26,38 @@ def test_threaded_requests():
     job_res_queue = queue.Queue()    
     
     class HFThread(threading.Thread):        
+        def count_to(self, n:int) -> float:
+            sum = 0.0
+            for i in range(n):
+                sum += n
+            return sum
+        
         def run(self):
             global keep_going
             while keep_going:
                 if job_queue.qsize() > 0:
                     (data, qid) = job_queue.get()
-                    time.sleep(1)
-                    job_res_queue.put((data + " done", qid))
+                    # simulates a cpu-bound task
+                    # this does not block the main thread.
+                    x = self.count_to(100000000)
+                    job_res_queue.put((data + " done, result = " + str(x), qid))
                     print(f"finished processing #{qid}, remaining queue {job_queue.qsize()}")
                 time.sleep(random.random()*0.1)
 
     qmap = {}
+    server_start_time = time.time()
+
     async def query(id:str):
         start_time = time.time()
-        print(f"task {id}")
         if job_queue.qsize() >= TASK_QUEUE_MAX_SIZE:
-            print(f"canceling task#{id}")
+            print(f"req@{start_time - server_start_time}, canceling task#{id}")
             result = -1
         else:
             response_q = asyncio.Queue()
+            print(f"req@{start_time - server_start_time}, putting in queue task#{id}, qsize: {job_queue.qsize()}")
             # place task in job queue and subscribe for notification
-            print(f"putting in queue task#{id}, qsize: {job_queue.qsize()}")
             job_queue.put((f"minitask {id}", id))
             qmap[id] = response_q
-
             # awake when job is done
             _ = await response_q.get() 
             result = time.time() - start_time
@@ -60,6 +68,7 @@ def test_threaded_requests():
             while job_res_queue.qsize() > 0:
                 (result, qid) = job_res_queue.get() # fetch result
                 await qmap[qid].put(result) # notify corresponding coroutine
+            # polling result frequency..
             await asyncio.sleep(0.1)
 
     async def main():
@@ -68,7 +77,7 @@ def test_threaded_requests():
         print("starting main")
         server = asyncio.create_task(poll_results_loop())
         for i in range(30):
-            print("spawn task", i)
+            # requests queued at rate
             tasks.append(asyncio.create_task(query(str(i))))
             await asyncio.sleep(0.5)
         # wait for queries to complete. hold on. this takes time
@@ -89,23 +98,37 @@ def test_threaded_requests():
 def test_multiple_requests():
     task_q = asyncio.Queue()
     TASK_QUEUE_MAX_SIZE = 4
+    server_start_time = time.time()
 
+    # sync function
+    def count_to(self, n:int) -> float:
+        sum = 0.0
+        for i in range(n):
+            sum += n
+        return sum
+    
     async def server_loop():
         words = ["動く","移す","話す","抱く"]
         while(True):
             (task, res_q) = await task_q.get()
-            outputs = lemming.generate_sentences(words)
-            print(f"server done generateing {task}, remaining in q: {task_q.qsize()}")
+            #outputs = lemming.generate_sentences(words)
+            n = 100000000
+            sum = 0.0
+            for i in range(n):
+                sum += n
+            outputs = sum
+            # asyncio.sleep(1.0)
+            print(f"finished generateing {task}, remaining in q: {task_q.qsize()}")
             await res_q.put(outputs)
 
     async def query(id:str):
-        print(f"task {id}")
         start_time = time.time()
         if task_q.qsize() > TASK_QUEUE_MAX_SIZE:
+            print(f"req@{start_time - server_start_time}, canceling task {id}")
             result = {"time": -1, "generation": []}
         else:
             response_q = asyncio.Queue()
-            print(f"putting in queue task#{id}")
+            print(f"req@{start_time - server_start_time}, putting in queue task#{id}")
             await task_q.put((f"minitask {id}", response_q))
             result = await response_q.get()
             end_time = time.time()
@@ -146,5 +169,5 @@ def test_multiple_requests():
     loop.close()
 
 #if __name__ == "__main__":
-#test_multiple_requests()
-test_threaded_requests()
+test_multiple_requests()
+#test_threaded_requests()

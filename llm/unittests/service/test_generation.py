@@ -4,8 +4,9 @@
 from typing import List, Dict
 import os
 import csv
-
+import asyncio
 import Lemming
+import time
 
 TEST_OUTPUT_DIR = "unittests/outputs"
 def write_to_csv(title: str, data: List[List[str]]):
@@ -13,19 +14,33 @@ def write_to_csv(title: str, data: List[List[str]]):
         writer = csv.writer(f)
         writer.writerows(data)
 
-lemming = Lemming.LemmingService()
 
-def test_generate_sentences():
+async def test_generate_sentences():
     words = ["動く","移す","話す","抱く"]
-    result = lemming.generate_sentences(words)
+    await asyncio.sleep(1.0)
     data = [["word", "sentence"]]
-    assert len(result) == len(words)
-    for (word, res) in zip(words, result):
-        assert res["count"] == len(res["sentences"])
-        for sent in res["sentences"]:
-            data.append([word, sent])
-    write_to_csv("test_generate_sentences.csv", data)
+
+    lemming = Lemming.LemmingService()
+
+    # create some tasks
+    tasks = []
+    startup = time.time()
+    for i in range(30):
+        print(f"req@ {time.time()-startup}, task#{i}")
+        tasks.append(asyncio.create_task(lemming.generate_sentences("動く")))
+        await asyncio.sleep(0.5)
+
+    # wait for all tasks to complete
+    tasks_results = await asyncio.gather(*tasks)
+
+    # see results
+    for results in tasks_results:
+        print(results)
+
+    lemming.shutdown = True
+    await lemming.loop
+
 
 #if __name__ == "__main__":
-test_generate_sentences()
+asyncio.run(test_generate_sentences())
 
