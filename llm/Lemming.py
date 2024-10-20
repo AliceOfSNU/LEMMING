@@ -7,6 +7,8 @@ import asyncio
 import random
 import uuid
 import time
+import language.morphemes as morph
+from language.grammar import PartOfSpeech
 
 MAX_QUEUE_SIZE = 100
 class LemmingService:
@@ -77,8 +79,8 @@ class LemmingService:
         self.sync_queue.put((q, prompt))
         return q
 
-    def postprocess(self, text: str) -> List[str]:
-        text = "discard" + text # add header so it can be discarded
+    def clean(self, text: str) -> List[str]:
+        text = "discard_segment\n" + text # add header so it can be discarded
         sentences = re.split("\n[0-9][. ]*", text)
         sentences = [sent.strip() for sent in sentences[1:]]
         return sentences
@@ -102,12 +104,27 @@ class LemmingService:
         self.durations.append(time.time()-start)
 
         # postproccessing
-        output = self.postprocess(output)
-
+        output = self.clean(output)
+        
         output = {"word": word, "sentences": output, "status": 0}
         return output
 
+    # performs stemming, lemmatization, and furigana
+    async def analyze_morphemes(self, output:Dict):
+        l_furigana = []
+        l_lemmatized = []
+        for sent in output["sentences"]:
+            res = morph.get_morphemes(sent)
+            res = morph.filter_trivial(res)
+            furigana = morph.filter_kanji(res)
+            furigana = morph.get_yomi(furigana)
+            lemmatized = morph.filter_pos(res, remove_pos=[PartOfSpeech.AUX_VERB, PartOfSpeech.NOUN_PARTICLE, PartOfSpeech.OTHER])
+            lemmatized = morph.get_dictform(lemmatized)
+            l_furigana.append(furigana)
+            l_lemmatized.append(lemmatized)
+        output.update({"furiganas": l_furigana, "dictforms": l_lemmatized})
+        return output
     
-    def generate_paragraph(self, subject: List[str]) -> List[dict]:
+    async def generate_paragraph(self, subject: List[str]) -> List[dict]:
         raise NotImplementedError()
     

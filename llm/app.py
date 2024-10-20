@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import List, Union
 
 import Lemming
-
+from language.morphemes import YomiWord, LemmaWord
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -25,6 +25,8 @@ class ParamsGenerateSentences(BaseModel):
 class ResultGenerateSentences(BaseModel):
     count: int
     sentences: List[str]
+    furiganas: List[List[YomiWord]]
+    dictforms: List[List[LemmaWord]]
 
 # routes
 @app.route("/")
@@ -34,8 +36,14 @@ async def hello_world():
 @app.post("/generate_sentences", response_model = ResultGenerateSentences)
 async def generate_sentences_api(params: ParamsGenerateSentences):
     result = await app.state.lemming.generate_sentences(params.word)
+    result = await app.state.lemming.analyze_morphemes(result)
     if result["status"] == 0:
-        result = {"count": len(result["sentences"]), "sentences": result["sentences"]}
+        result = {
+            "count": len(result["sentences"]), 
+            "sentences": result["sentences"],
+            "furiganas": result["furiganas"],
+            "dictforms": result["dictforms"]
+        }
     else:
         raise HTTPException(status_code=504, detail="Server heavily loaded. maybe try later.")
 
