@@ -85,6 +85,10 @@ class LemmingService:
         sentences = [sent.strip() for sent in sentences[1:]]
         return sentences
     
+    async def generate(self, prompt):
+        q = await self._create_generation_task(prompt)
+        return q.get()
+    
     async def generate_sentences(self, word):
         prompt = self.prompter.prompt_generate_sentences(word)
         if self.n == 0:

@@ -14,13 +14,12 @@ def write_to_csv(title: str, data: List[List[str]]):
         writer = csv.writer(f)
         writer.writerows(data)
 
+lemming = Lemming.LemmingService()
 
 async def test_generate_sentences():
     words = ["動く","移す","話す","抱く"]
     await asyncio.sleep(1.0)
     data = [["word", "sentence"]]
-
-    lemming = Lemming.LemmingService()
 
     # create some tasks
     tasks = []
@@ -84,8 +83,53 @@ def test_lemmatization():
     dictforms = morph.get_dictform(tagged)
     for tag in dictforms:
         print(tag)
+
+async def test_parse_quiz():
+    sent = """#出力形式に従って、4択式のクイズを作成します。
+#問題1:
+問題: マイクロプラスチックは、どのようなプラスチック片のことですか?
+選択肢:
+1. 大きなプラスチック片
+2. 5ミリメートル以下の小さなプラスチック片
+3. 使用済みのプラスチック片
+4. 新品のプラスチック片
+問題2:
+マイクロプラスチックは、どのような経路で人体に摂取されることが懸念されていますか。
+
+選択肢:
+1. 空気中の浮遊物を吸引すること
+2. 水道水や海産物を通じて
+3. 食物連鎖を通じて海洋生物を食べること
+4. 工業廃棄物を直接摂取すること"""
+
+    # Expected output 
+    # 
+    # [{
+    #   "question": "マイクロプラスチックは、どのようなプラスチック片のことですか"
+    #   "choices": [
+    #       "大きなプラスチック片",
+    #       "5ミリメートル以下の小さなプラスチック片",
+    #       ... ]
+    # },
+    # { .. }]
+    
+    pipeline = GenerativeQuizPipeline(lemming.generate)
+    output = pipeline.parser.parse(sent)
+    print(output)
+
+async def test_reading_pipeline():
+    # make
+    quizbuilder = ReadingComprehensionPipeline(lemming.generate)
+    quiz = await quizbuilder.generate("マイクロプラスチック")
+    await lemming.shutdown()
+
+
+
+
+
 #if __name__ == "__main__":
 #asyncio.run(test_generate_sentences())
 #test_parser()
 #test_furigana()
-test_lemmatization()
+#test_lemmatization()
+#test_parse_quiz
